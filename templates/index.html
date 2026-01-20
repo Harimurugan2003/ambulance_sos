@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>User – Ambulance Alert</title>
+<style>
+  body { margin: 0; font-family: sans-serif; }
+  #map { height: 100vh; width: 100%; }
+  #controls { position: absolute; top: 10px; left: 10px; z-index: 10; background: white; padding: 10px; border-radius: 4px; box-shadow: 0 2px 5px rgba(0,0,0,0.3); }
+  
+  #alert-popup {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    background-color: red;
+    color: white;
+    padding: 20px;
+    font-size: 18px;
+    font-weight: bold;
+    border-radius: 10px;
+    z-index: 100;
+    text-align: center;
+    box-shadow: 0 0 20px rgba(255, 0, 0, 0.8);
+    display: none;
+    animation: flash 1s infinite alternate;
+  }
+  
+  @keyframes flash {
+    from { opacity: 1; }
+    to { opacity: 0.8; transform: scale(0.95); }
+  }
+</style>
+</head>
+<body>
+
+<div id="controls">
+    <button onclick="startRoadMode()">Road Mode ON</button>
+    <button onclick="stopRoadMode()">OFF</button>
+    <span id="status-text">Mode: OFF</span>
+</div>
+
+<div id="alert-popup">
+    🚑 AMBULANCE NEARBY!<br>
+    PLEASE GIVE WAY!
+</div>
+
+<div id="map"></div>
+
+<script>
+let map, userMarker, ambMarker;
+let road = false;
+const alertPopup = document.getElementById('alert-popup');
+const statusText = document.getElementById('status-text');
+let notificationPermitted = false;
+let isAlerting = false;
+
+function startRoadMode() {
+    road = true;
+    statusText.innerText = "Mode: ON";
+    
+    // Request permission explicitly on user interaction
+    if (Notification.permission !== "denied") {
+        Notification.requestPermission().then(p => {
+            notificationPermitted = (p === "granted");
+        });
+    }
+}
+
+function stopRoadMode() {
+    road = false;
+    statusText.innerText = "Mode: OFF";
+    alertPopup.style.display = "none";
+}
+
+function initMap(){
+  map = new google.maps.Map(document.getElementById("map"), {
+    center:{lat:11.0168,lng:76.9558}, zoom:14
+  });
+
+  navigator.geolocation.watchPosition(pos=>{
+    let lat = pos.coords.latitude;
+    let lng = pos.coords.longitude;
+    let speed = pos.coords.speed ? pos.coords.speed*3.6 : 0;
+
+    if(!userMarker){
+      userMarker = new google.maps.Marker({position:{lat,lng},map});
+      map.setCenter({lat,lng});
+    } else userMarker.setPosition({lat,lng});
+
+    fetch("/update_user",{
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({lat,lng,speed})
+    });
+  });
+
+  setInterval(()=>{
+    fetch("/check_nearby")
+    .then(r=>r.json())
+    .then(d=>{
+      console.log("Check result:", d, "Road Mode:", road); 
+      if(d.amb){
+        if(!ambMarker){
+          ambMarker = new google.maps.Marker({
+            position:d.amb,
+            map,
+            icon:"https://maps.google.com/mapfiles/ms/icons/truck.png"
+          });
+        } else ambMarker.setPosition(d.amb);
+      }
+      
+      if(d.alert && road){
+        showAlert();
+      } else {
+        hideAlert();
+      }
+    });
+  },3000);
+}
+
+    function showAlert() {
+        // Show visual popup always (it's passive)
+        alertPopup.style.display = "block";
+        
+        // Only play sound and send system notification if not already alerting
+        if (!isAlerting) {
+            new Audio("/static/siren.mp3").play().catch(e => console.log("Audio autoplay blocked"));
+
+            if (Notification.permission === "granted") {
+                new Notification("🚑 Ambulance Nearby", { 
+                    body: "An ambulance is approaching your location. Please give way.",
+                    icon: "/static/siren.png"
+                });
+            }
+            isAlerting = true;
+        }
+    }
+
+    function hideAlert() {
+        alertPopup.style.display = "none";
+        isAlerting = false;
+    }
+
+</script>
+
+<script async defer
+src="https://maps.googleapis.com/maps/api/js?key=AIzaSyAE3DmEpgRZI-0m6ERMPbc3sECXaQe_-Ts&callback=initMap">
+</script>
+
+</body>
+</html>

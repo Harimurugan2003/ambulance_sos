@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Ambulance Mode</title>
+    <style>
+        body { margin: 0; padding: 0; font-family: sans-serif; }
+        h3 { position: absolute; top: 10px; left: 10px; z-index: 10; background: white; padding: 10px; margin: 0; border-radius: 4px; box-shadow: 0 2px 6px rgba(0,0,0,0.3); }
+        #map { height: 100vh; width: 100%; }
+        #controls { position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%); z-index: 10; display: flex; gap: 10px; }
+        #status { background: white; padding: 10px 20px; border-radius: 30px; font-weight: bold; box-shadow: 0 2px 5px rgba(0,0,0,0.2); }
+        
+        .btn-toggle {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 30px;
+            cursor: pointer;
+            font-weight: bold;
+            font-size: 16px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+            transition: background 0.3s;
+        }
+        .btn-off { background-color: #4CAF50; color: white; } /* Green for "Go Online / Start" */
+        .btn-on { background-color: #f44336; color: white; } /* Red for "Stop Emergency" */
+    </style>
+</head>
+<body>
+    <h3>🚑 Ambulance Mode</h3>
+    
+    <div id="controls">
+        <div id="status">Standby</div>
+        <button id="toggleBtn" class="btn-toggle btn-off" onclick="toggleEmergency()">Start Emergency</button>
+    </div>
+
+    <div id="map"></div>
+
+    <script>
+        let map, ambulanceMarker;
+        const statusDiv = document.getElementById('status');
+        const toggleBtn = document.getElementById('toggleBtn');
+        
+        let isEmergency = false;
+        let currentLat = 0;
+        let currentLng = 0;
+
+        function toggleEmergency() {
+            isEmergency = !isEmergency;
+            updateUI();
+            // Send update immediately to reflect status change
+            sendUpdate(currentLat, currentLng);
+        }
+
+        function updateUI() {
+            if (isEmergency) {
+                statusDiv.innerText = "🚨 EMERGENCY ON";
+                statusDiv.style.color = "red";
+                toggleBtn.innerText = "Stop Emergency";
+                toggleBtn.className = "btn-toggle btn-on";
+            } else {
+                statusDiv.innerText = "Standby mode";
+                statusDiv.style.color = "black";
+                toggleBtn.innerText = "Start Emergency";
+                toggleBtn.className = "btn-toggle btn-off";
+            }
+        }
+
+        function initMap() {
+            // Default center (Coimbatore approx from index.html)
+            const initialPos = { lat: 11.0168, lng: 76.9558 };
+            map = new google.maps.Map(document.getElementById("map"), {
+                zoom: 15,
+                center: initialPos,
+            });
+
+            ambulanceMarker = new google.maps.Marker({
+                position: initialPos,
+                map: map,
+                title: "Ambulance",
+                icon: "https://maps.google.com/mapfiles/ms/icons/truck.png"
+            });
+
+            startTracking();
+        }
+
+        function startTracking() {
+            if (!navigator.geolocation) {
+                statusDiv.innerText = "Geolocation not supported";
+                return;
+            }
+
+            navigator.geolocation.watchPosition(
+                (pos) => {
+                    currentLat = pos.coords.latitude;
+                    currentLng = pos.coords.longitude;
+                    const position = { lat: currentLat, lng: currentLng };
+
+                    // Update Map
+                    if (map && ambulanceMarker) {
+                        ambulanceMarker.setPosition(position);
+                        map.setCenter(position);
+                    }
+
+                    // Send to Server
+                    sendUpdate(currentLat, currentLng);
+                },
+                (err) => {
+                    console.error(err);
+                },
+                {
+                    enableHighAccuracy: true
+                }
+            );
+        }
+
+        function sendUpdate(lat, lng) {
+            if (lat === 0 && lng === 0) return; // Don't send invalid coordinates
+
+            fetch("/update_ambulance", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    lat: lat, 
+                    lng: lng,
+                    status: isEmergency ? 'ON' : 'OFF'
+                })
+            }).catch(err => console.error("Error sending update:", err));
+        }
+    </script>
+    
+    <!-- Using the same key found in index.html -->
+    <script async defer
+        src="https://maps.googleapis.com/maps/api/js?key=AIzaSyAE3DmEpgRZI-0m6ERMPbc3sECXaQe_-Ts&callback=initMap">
+    </script>
+</body>
+</html>
