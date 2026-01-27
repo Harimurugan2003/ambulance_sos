@@ -1,18 +1,17 @@
 from flask import Flask, render_template, request, jsonify, session
-from flask_mysqldb import MySQL
+import psycopg2
+import os
 import uuid
 
 app = Flask(__name__)
 app.secret_key = "ambulance_secret"
 
 # DB CONFIG
-app.config['MYSQL_HOST'] = 'localhost'
-app.config['MYSQL_USER'] = 'root'
-app.config['MYSQL_PASSWORD'] = 'Harimurugan@17'
-app.config['MYSQL_DB'] = 'ambulance_alert'
-app.config['MYSQL_PORT'] = 3306
+DATABASE_URL = os.environ.get('DATABASE_URL', 'postgresql://ambulance_db_ny8v_user:r0aGDaeWZuHDMg7XrRyTd5vQIE7bcAfP@dpg-d5s872n18n1s73c926bg-a/ambulance_db_ny8v')
 
-mysql = MySQL(app)
+def get_db_connection():
+    conn = psycopg2.connect(DATABASE_URL)
+    return conn
 
 # HOME – USER
 @app.route("/")
@@ -32,17 +31,20 @@ def update_user():
     data = request.json
     user_id = session['user_id']
 
-    cur = mysql.connection.cursor()
+    conn = get_db_connection()
+    cur = conn.cursor()
     cur.execute("""
-        INSERT INTO users VALUES (%s,%s,%s,%s,NOW())
-        ON DUPLICATE KEY UPDATE
-        lat=%s, lng=%s, speed=%s
+        INSERT INTO users (user_id, lat, lng, speed, updated_at) 
+        VALUES (%s,%s,%s,%s,NOW())
+        ON CONFLICT (user_id) 
+        DO UPDATE SET
+        lat=EXCLUDED.lat, lng=EXCLUDED.lng, speed=EXCLUDED.speed, updated_at=NOW()
     """, (
-        user_id, data['lat'], data['lng'], data['speed'],
-        data['lat'], data['lng'], data['speed']
+        user_id, data['lat'], data['lng'], data['speed']
     ))
-    mysql.connection.commit()
+    conn.commit()
     cur.close()
+    conn.close()
     return "User updated"
 
 # UPDATE AMBULANCE LOCATION
@@ -51,14 +53,16 @@ def update_ambulance():
     data = request.json
     status = data.get('status', 'OFF') # Default to OFF if not sent
     
-    cur = mysql.connection.cursor()
+    conn = get_db_connection()
+    cur = conn.cursor()
     cur.execute("""
         UPDATE ambulance
         SET lat=%s, lng=%s, status=%s
         WHERE id=1
     """, (data['lat'], data['lng'], status))
-    mysql.connection.commit()
+    conn.commit()
     cur.close()
+    conn.close()
     return "Ambulance updated"
 
 # CHECK NEARBY
@@ -66,7 +70,8 @@ def update_ambulance():
 def check_nearby():
     radius = 0.005
     user_id = session['user_id']
-    cur = mysql.connection.cursor()
+    conn = get_db_connection()
+    cur = conn.cursor()
 
     cur.execute("SELECT * FROM ambulance WHERE id=1")
     amb = cur.fetchone()
@@ -76,6 +81,7 @@ def check_nearby():
     cur.execute("SELECT * FROM users WHERE user_id=%s", (user_id,))
     usr = cur.fetchone()
     cur.close()
+    conn.close()
 
     if not usr or not amb:
         return jsonify({"alert": False})
