@@ -3,16 +3,16 @@ USE ambulance_alert;
 
 CREATE TABLE users (
   user_id VARCHAR(100) PRIMARY KEY,
-  lat DOUBLE PRECISION,
-  lng DOUBLE PRECISION,
-  speed DOUBLE PRECISION,
+  lat DOUBLE,
+  lng DOUBLE,
+  speed DOUBLE,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE ambulance (
   id INT PRIMARY KEY,
-  lat DOUBLE PRECISION,
-  lng DOUBLE PRECISION,
+  lat DOUBLE,
+  lng DOUBLE,
   status VARCHAR(10)
 );
 
