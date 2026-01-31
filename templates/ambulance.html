@@ -83,9 +83,31 @@
         let isEmergency = false;
         let currentLat = 0;
         let currentLng = 0;
+        
+        // Voice State
+        let announcedStart = false;
+        let announcedArrival = false;
+
+        function speak(text) {
+            if ('speechSynthesis' in window) {
+                const utterance = new SpeechSynthesisUtterance(text);
+                utterance.rate = 1.0;
+                utterance.pitch = 1.0;
+                window.speechSynthesis.speak(utterance);
+            }
+        }
 
         function toggleEmergency() {
             isEmergency = !isEmergency;
+            
+            // Reset Voice State on Toggle
+            if (isEmergency) {
+                announcedStart = false; 
+                announcedArrival = false;
+            } else {
+                speak("Emergency mode deactivated. Returning to standby.");
+            }
+            
             updateUI();
             // Send update immediately to reflect status change
             sendUpdate(currentLat, currentLng);
@@ -189,6 +211,17 @@
                     if (mins < 1) mins = 1;
                     if (mins === 1 && data.eta_seconds < 30) etaTextDiv.innerText = "< 1 min";
                     else etaTextDiv.innerText = mins + " min";
+                    
+                    // VOICE: Announcement Logic
+                    if (!announcedStart) {
+                        speak(`Emergency Activated. Routing to ${data.hospital.name}. Estimated time ${mins} minutes.`);
+                        announcedStart = true;
+                    }
+                    
+                    if (mins === 1 && data.eta_seconds < 45 && !announcedArrival) {
+                        speak(`Arriving at ${data.hospital.name} in less than one minute.`);
+                        announcedArrival = true;
+                    }
                     
                     // Update Destination Marker
                     if (!destMarker) {
