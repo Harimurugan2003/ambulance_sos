@@ -5,7 +5,18 @@
     <style>
         body { margin: 0; padding: 0; font-family: sans-serif; }
         h3 { position: absolute; top: 10px; left: 10px; z-index: 10; background: white; padding: 10px; margin: 0; border-radius: 4px; box-shadow: 0 2px 6px rgba(0,0,0,0.3); }
-        #map { height: 100vh; width: 100%; }
+        #map { height: 100vh; width: 100%; display: none; }
+        #placeholder { 
+            height: 100vh; 
+            width: 100%; 
+            display: flex; 
+            justify-content: center; 
+            align-items: center; 
+            background: #f0f0f0; 
+            color: #555; 
+            font-size: 24px; 
+            flex-direction: column;
+        }
         #controls { position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%); z-index: 10; display: flex; gap: 10px; }
         #status { background: white; padding: 10px 20px; border-radius: 30px; font-weight: bold; box-shadow: 0 2px 5px rgba(0,0,0,0.2); }
         
@@ -20,7 +31,24 @@
             transition: background 0.3s;
         }
         .btn-off { background-color: #4CAF50; color: white; } /* Green for "Go Online / Start" */
+        .btn-off { background-color: #4CAF50; color: white; } /* Green for "Go Online / Start" */
         .btn-on { background-color: #f44336; color: white; } /* Red for "Stop Emergency" */
+        
+        #info-panel {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: white;
+            padding: 15px;
+            border-radius: 10px;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.2);
+            z-index: 10;
+            display: none;
+            text-align: right;
+        }
+        #info-panel div { margin-bottom: 5px; }
+        .hosp-name { font-weight: bold; font-size: 18px; color: #d32f2f; }
+        .eta-time { font-size: 24px; font-weight: bold; color: #1a237e; }
     </style>
 </head>
 <body>
@@ -31,12 +59,26 @@
         <button id="toggleBtn" class="btn-toggle btn-off" onclick="toggleEmergency()">Start Emergency</button>
     </div>
 
+    <div id="info-panel">
+        <div>Destination Hospital</div>
+        <div id="hosp-name" class="hosp-name">--</div>
+        <div id="eta-text" class="eta-time">-- min</div>
+    </div>
+
+    <div id="placeholder">
+        <div style="font-size: 60px; margin-bottom: 20px;">🚑</div>
+        Status: Standby<br>
+        <span style="font-size: 18px; margin-top: 10px;">Turn ON Emergency to View Map</span>
+    </div>
     <div id="map"></div>
 
     <script>
-        let map, ambulanceMarker;
+        let map, ambulanceMarker, destMarker;
         const statusDiv = document.getElementById('status');
         const toggleBtn = document.getElementById('toggleBtn');
+        const infoPanel = document.getElementById('info-panel');
+        const hospNameDiv = document.getElementById('hosp-name');
+        const etaTextDiv = document.getElementById('eta-text');
         
         let isEmergency = false;
         let currentLat = 0;
@@ -50,16 +92,30 @@
         }
 
         function updateUI() {
+            const mapDiv = document.getElementById('map');
+            const placeholder = document.getElementById('placeholder');
+
             if (isEmergency) {
                 statusDiv.innerText = "🚨 EMERGENCY ON";
                 statusDiv.style.color = "red";
                 toggleBtn.innerText = "Stop Emergency";
                 toggleBtn.className = "btn-toggle btn-on";
+                
+                // Show Map
+                mapDiv.style.display = "block";
+                placeholder.style.display = "none";
+                
+                // Resize event often needed when un-hiding google maps
+                google.maps.event.trigger(map, "resize"); 
             } else {
                 statusDiv.innerText = "Standby mode";
                 statusDiv.style.color = "black";
                 toggleBtn.innerText = "Start Emergency";
                 toggleBtn.className = "btn-toggle btn-off";
+                
+                // Hide Map
+                mapDiv.style.display = "none";
+                placeholder.style.display = "flex";
             }
         }
 
@@ -122,7 +178,36 @@
                     lng: lng,
                     status: isEmergency ? 'ON' : 'OFF'
                 })
-            }).catch(err => console.error("Error sending update:", err));
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (isEmergency && data.hospital) {
+                    infoPanel.style.display = "block";
+                    hospNameDiv.innerText = data.hospital.name;
+                    
+                    let mins = Math.ceil(data.eta_seconds / 60);
+                    if (mins < 1) mins = 1;
+                    if (mins === 1 && data.eta_seconds < 30) etaTextDiv.innerText = "< 1 min";
+                    else etaTextDiv.innerText = mins + " min";
+                    
+                    // Update Destination Marker
+                    if (!destMarker) {
+                        destMarker = new google.maps.Marker({
+                            position: data.hospital,
+                            map: map,
+                            title: data.hospital.name,
+                            icon: "https://maps.google.com/mapfiles/ms/icons/hospitals.png"
+                        });
+                    } else {
+                        destMarker.setPosition(data.hospital);
+                        destMarker.setMap(map); // Ensure visible
+                    }
+                } else {
+                    infoPanel.style.display = "none";
+                    if (destMarker) destMarker.setMap(null);
+                }
+            })
+            .catch(err => console.error("Error sending update:", err));
         }
     </script>
     

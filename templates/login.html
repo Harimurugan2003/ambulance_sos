@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login - Ambulance Alert</title>
+    <style>
+        :root {
+            --primary: #ff4b4b;
+            --secondary: #4b7bff;
+            --glass: rgba(255, 255, 255, 0.1);
+            --glass-border: rgba(255, 255, 255, 0.2);
+            --text: #ffffff;
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            overflow: hidden;
+            color: var(--text);
+        }
+
+        /* Animated Background Shapes */
+        .shape {
+            position: absolute;
+            border-radius: 50%;
+            filter: blur(80px);
+            z-index: 0;
+            animation: float 20s infinite;
+        }
+        .shape-1 {
+            width: 300px;
+            height: 300px;
+            background: var(--primary);
+            top: -50px;
+            left: -50px;
+            opacity: 0.4;
+        }
+        .shape-2 {
+            width: 400px;
+            height: 400px;
+            background: var(--secondary);
+            bottom: -100px;
+            right: -100px;
+            opacity: 0.3;
+            animation-delay: -10s;
+        }
+
+        @keyframes float {
+            0%, 100% { transform: translate(0, 0); }
+            50% { transform: translate(30px, -30px); }
+        }
+
+        .container {
+            z-index: 1;
+            background: var(--glass);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid var(--glass-border);
+            border-radius: 20px;
+            padding: 40px;
+            width: 90%;
+            max-width: 400px;
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+            text-align: center;
+        }
+
+        h1 {
+            margin-bottom: 30px;
+            font-size: 2em;
+            letter-spacing: 1px;
+            text-shadow: 0 2px 4px rgba(0,0,0,0.3);
+        }
+
+        .tabs {
+            display: flex;
+            margin-bottom: 30px;
+            background: rgba(0,0,0,0.2);
+            border-radius: 30px;
+            padding: 4px;
+        }
+
+        .tab {
+            flex: 1;
+            padding: 10px;
+            cursor: pointer;
+            border-radius: 25px;
+            transition: all 0.3s ease;
+            font-weight: 600;
+        }
+
+        .tab.active {
+            background: var(--text);
+            color: #1a1a2e;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+        }
+
+        .form-goup {
+            margin-bottom: 20px;
+            text-align: left;
+        }
+        
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-size: 0.9em;
+            opacity: 0.8;
+        }
+
+        input {
+            width: 100%;
+            padding: 12px;
+            margin: 8px 0;
+            box-sizing: border-box;
+            border-radius: 10px;
+            border: 1px solid var(--glass-border);
+            background: rgba(255,255,255,0.05);
+            color: white;
+            font-size: 16px;
+            outline: none;
+            transition: 0.3s;
+        }
+        
+        input:focus {
+            background: rgba(255,255,255,0.1);
+            border-color: var(--secondary);
+        }
+
+        button {
+            width: 100%;
+            padding: 14px;
+            border: none;
+            border-radius: 10px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+            margin-top: 10px;
+        }
+
+        .btn-people {
+            background: linear-gradient(45deg, var(--secondary), #6c4bff);
+            color: white;
+            box-shadow: 0 4px 15px rgba(75, 123, 255, 0.4);
+        }
+
+        .btn-ambulance {
+            background: linear-gradient(45deg, var(--primary), #ff8e4b);
+            color: white;
+            box-shadow: 0 4px 15px rgba(255, 75, 75, 0.4);
+        }
+
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(0,0,0,0.3);
+        }
+        
+        button:active {
+            transform: translateY(1px);
+        }
+
+        .hidden {
+            display: none;
+        }
+
+        .icon {
+            font-size: 40px;
+            margin-bottom: 10px;
+            display: block;
+        }
+
+    </style>
+</head>
+<body>
+    <div class="shape shape-1"></div>
+    <div class="shape shape-2"></div>
+
+    <div class="container">
+        <h1>Ambulance Alert</h1>
+        
+        <div class="tabs">
+            <div class="tab active" onclick="switchTab('people')">Public</div>
+            <div class="tab" onclick="switchTab('ambulance')">Ambulance</div>
+        </div>
+
+        <div id="people-form">
+            <span class="icon">🚗</span>
+            <p>Connect to road network to receive alerts.</p>
+            <form action="/login" method="POST">
+                <input type="hidden" name="type" value="people">
+                <button type="submit" class="btn-people">Enter Road Mode</button>
+            </form>
+        </div>
+
+        <div id="ambulance-form" class="hidden">
+            <span class="icon">🚑</span>
+            <p>Authorized personnel only.</p>
+            <form action="/login" method="POST">
+                <input type="hidden" name="type" value="ambulance">
+                <div class="form-group">
+                    <input type="password" name="driver_id" placeholder="Enter Driver ID (any)" required>
+                </div>
+                <button type="submit" class="btn-ambulance">Login as Driver</button>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        function switchTab(tab) {
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            if (tab === 'people') {
+                document.querySelector('.tabs .tab:first-child').classList.add('active');
+                document.getElementById('people-form').classList.remove('hidden');
+                document.getElementById('ambulance-form').classList.add('hidden');
+            } else {
+                document.querySelector('.tabs .tab:last-child').classList.add('active');
+                document.getElementById('people-form').classList.add('hidden');
+                document.getElementById('ambulance-form').classList.remove('hidden');
+            }
+        }
+    </script>
+</body>
+</html>

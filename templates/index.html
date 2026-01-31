@@ -4,8 +4,19 @@
 <title>User – Ambulance Alert</title>
 <style>
   body { margin: 0; font-family: sans-serif; }
-  #map { height: 100vh; width: 100%; }
-  #controls { position: absolute; top: 10px; left: 10px; z-index: 10; background: white; padding: 10px; border-radius: 4px; box-shadow: 0 2px 5px rgba(0,0,0,0.3); }
+  #map { height: 100vh; width: 100%; display: none; }
+  #placeholder { 
+      height: 100vh; 
+      width: 100%; 
+      display: flex; 
+      justify-content: center; 
+      align-items: center; 
+      background: #e3f2fd; 
+      color: #1565c0; 
+      font-size: 24px; 
+      flex-direction: column;
+      text-align: center;
+  }
   
   #alert-popup {
     position: fixed;
@@ -28,6 +39,22 @@
     from { opacity: 1; }
     to { opacity: 0.8; transform: scale(0.95); }
   }
+  
+  #eta-display {
+    position: fixed;
+    top: 80px; 
+    right: 20px;
+    background: #fff;
+    border: 2px solid #ff0000;
+    padding: 10px 20px;
+    border-radius: 30px;
+    font-weight: bold;
+    color: #d32f2f;
+    font-size: 20px;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.2);
+    display: none;
+    z-index: 100;
+  }
 </style>
 </head>
 <body>
@@ -43,13 +70,21 @@
     PLEASE GIVE WAY!
 </div>
 
+<div id="placeholder">
+    <div style="font-size: 60px; margin-bottom: 20px;">🚗</div>
+    <h3>Road Mode OFF</h3>
+    <p>Please click "Road Mode ON" to connect to the network<br>and view roadway warnings.</p>
+</div>
+
 <div id="map"></div>
 
 <script>
-let map, userMarker, ambMarker;
+let map, userMarker, ambMarker, hospMarker;
 let road = false;
 const alertPopup = document.getElementById('alert-popup');
 const statusText = document.getElementById('status-text');
+const mapDiv = document.getElementById('map');
+const placeholder = document.getElementById('placeholder');
 let notificationPermitted = false;
 let isAlerting = false;
 
@@ -57,6 +92,11 @@ function startRoadMode() {
     road = true;
     statusText.innerText = "Mode: ON";
     
+    // Show Map
+    mapDiv.style.display = "block";
+    placeholder.style.display = "none";
+    if(map) google.maps.event.trigger(map, "resize");
+
     // Request permission explicitly on user interaction
     if (Notification.permission !== "denied") {
         Notification.requestPermission().then(p => {
@@ -69,6 +109,10 @@ function stopRoadMode() {
     road = false;
     statusText.innerText = "Mode: OFF";
     alertPopup.style.display = "none";
+    
+    // Hide Map
+    mapDiv.style.display = "none";
+    placeholder.style.display = "flex";
 }
 
 function initMap(){
@@ -113,6 +157,22 @@ function initMap(){
       } else {
         hideAlert();
       }
+      
+      // Hospital Marker
+      if (d.hospital) {
+          if (!hospMarker) {
+              hospMarker = new google.maps.Marker({
+                  position: d.hospital,
+                  map: map,
+                  title: d.hospital.name,
+                  icon: "https://maps.google.com/mapfiles/ms/icons/hospitals.png" // Reliable Hospital Icon
+              });
+          } else {
+            hospMarker.setPosition(d.hospital);
+          }
+      }
+      
+      // ETA Display REMOVED as per request
     });
   },3000);
 }
