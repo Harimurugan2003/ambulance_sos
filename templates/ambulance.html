@@ -60,16 +60,14 @@
     </div>
 
     <div id="info-panel">
-        <div>Destination Hospital</div>
-        <div id="hosp-name" class="hosp-name">--</div>
-        <div id="eta-text" class="eta-time">-- min</div>
+        <div id="hosp-name"></div>
+        <div id="eta-text"></div>
     </div>
 
     <div id="placeholder">
-        <div style="font-size: 60px; margin-bottom: 20px;">🚑</div>
-        Status: Standby<br>
-        <span style="font-size: 18px; margin-top: 10px;">Turn ON Emergency to View Map</span>
+        <div>Ambulance Mode Standby</div>
     </div>
+
     <div id="map"></div>
 
     <script>
@@ -112,7 +110,6 @@
             // Send update immediately to reflect status change
             sendUpdate(currentLat, currentLng);
         }
-
         function updateUI() {
             const mapDiv = document.getElementById('map');
             const placeholder = document.getElementById('placeholder');
@@ -128,7 +125,13 @@
                 placeholder.style.display = "none";
                 
                 // Resize event often needed when un-hiding google maps
-                google.maps.event.trigger(map, "resize"); 
+                if (typeof google !== 'undefined' && map) {
+                    google.maps.event.trigger(map, "resize"); 
+                    map.setCenter({ lat: currentLat || 11.0168, lng: currentLng || 76.9558 });
+                } else {
+                    console.warn("Google Maps not ready yet.");
+                    if(typeof initMap === 'function') initMap(); // Retry init if needed
+                }
             } else {
                 statusDiv.innerText = "Standby mode";
                 statusDiv.style.color = "black";
@@ -139,6 +142,61 @@
                 mapDiv.style.display = "none";
                 placeholder.style.display = "flex";
             }
+        }
+
+        function sendUpdate(lat, lng) {
+            if (lat === 0 && lng === 0) return; // Don't send invalid coordinates
+            
+            fetch("/update_ambulance", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    lat: lat, 
+                    lng: lng,
+                    status: isEmergency ? 'ON' : 'OFF'
+                })
+            })
+            // ... (rest of the function) ...
+            .then(res => res.json())
+            .then(data => {
+                if (isEmergency && data.hospital) {
+                    infoPanel.style.display = "block";
+                    hospNameDiv.innerText = data.hospital.name;
+                    
+                    let mins = Math.ceil(data.eta_seconds / 60);
+                    if (mins < 1) mins = 1;
+                    if (mins === 1 && data.eta_seconds < 30) etaTextDiv.innerText = "< 1 min";
+                    else etaTextDiv.innerText = mins + " min";
+                    
+                    // VOICE: Announcement Logic
+                    if (!announcedStart) {
+                        speak(`Emergency Activated. Routing to ${data.hospital.name}. Estimated time ${mins} minutes.`);
+                        announcedStart = true;
+                    }
+                    
+                    if (mins === 1 && data.eta_seconds < 45 && !announcedArrival) {
+                        speak(`Arriving at ${data.hospital.name} in less than one minute.`);
+                        announcedArrival = true;
+                    }
+                    
+                    // Update Destination Marker
+                    if (!destMarker) {
+                        destMarker = new google.maps.Marker({
+                            position: data.hospital,
+                            map: map,
+                            title: data.hospital.name,
+                            icon: "https://maps.google.com/mapfiles/ms/icons/hospitals.png"
+                        });
+                    } else {
+                        destMarker.setPosition(data.hospital);
+                        destMarker.setMap(map); // Ensure visible
+                    }
+                } else {
+                    infoPanel.style.display = "none";
+                    if (destMarker) destMarker.setMap(null);
+                }
+            })
+            .catch(err => console.error("Error sending update:", err));
         }
 
         function initMap() {
@@ -187,60 +245,6 @@
                     enableHighAccuracy: true
                 }
             );
-        }
-
-        function sendUpdate(lat, lng) {
-            if (lat === 0 && lng === 0) return; // Don't send invalid coordinates
-
-            fetch("/update_ambulance", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    lat: lat, 
-                    lng: lng,
-                    status: isEmergency ? 'ON' : 'OFF'
-                })
-            })
-            .then(res => res.json())
-            .then(data => {
-                if (isEmergency && data.hospital) {
-                    infoPanel.style.display = "block";
-                    hospNameDiv.innerText = data.hospital.name;
-                    
-                    let mins = Math.ceil(data.eta_seconds / 60);
-                    if (mins < 1) mins = 1;
-                    if (mins === 1 && data.eta_seconds < 30) etaTextDiv.innerText = "< 1 min";
-                    else etaTextDiv.innerText = mins + " min";
-                    
-                    // VOICE: Announcement Logic
-                    if (!announcedStart) {
-                        speak(`Emergency Activated. Routing to ${data.hospital.name}. Estimated time ${mins} minutes.`);
-                        announcedStart = true;
-                    }
-                    
-                    if (mins === 1 && data.eta_seconds < 45 && !announcedArrival) {
-                        speak(`Arriving at ${data.hospital.name} in less than one minute.`);
-                        announcedArrival = true;
-                    }
-                    
-                    // Update Destination Marker
-                    if (!destMarker) {
-                        destMarker = new google.maps.Marker({
-                            position: data.hospital,
-                            map: map,
-                            title: data.hospital.name,
-                            icon: "https://maps.google.com/mapfiles/ms/icons/hospitals.png"
-                        });
-                    } else {
-                        destMarker.setPosition(data.hospital);
-                        destMarker.setMap(map); // Ensure visible
-                    }
-                } else {
-                    infoPanel.style.display = "none";
-                    if (destMarker) destMarker.setMap(null);
-                }
-            })
-            .catch(err => console.error("Error sending update:", err));
         }
     </script>
     
