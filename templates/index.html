@@ -1,210 +1,367 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-<title>User – Ambulance Alert</title>
-<style>
-  body { margin: 0; font-family: sans-serif; }
-  #map { height: 100vh; width: 100%; display: none; }
-  #placeholder { 
-      height: 100vh; 
-      width: 100%; 
-      display: flex; 
-      justify-content: center; 
-      align-items: center; 
-      background: #e3f2fd; 
-      color: #1565c0; 
-      font-size: 24px; 
-      flex-direction: column;
-      text-align: center;
-  }
-  
-  #alert-popup {
-    position: fixed;
-    bottom: 20px;
-    right: 20px;
-    background-color: red;
-    color: white;
-    padding: 20px;
-    font-size: 18px;
-    font-weight: bold;
-    border-radius: 10px;
-    z-index: 100;
-    text-align: center;
-    box-shadow: 0 0 20px rgba(255, 0, 0, 0.8);
-    display: none;
-    animation: flash 1s infinite alternate;
-  }
-  
-  @keyframes flash {
-    from { opacity: 1; }
-    to { opacity: 0.8; transform: scale(0.95); }
-  }
-  
-  #eta-display {
-    position: fixed;
-    top: 80px; 
-    right: 20px;
-    background: #fff;
-    border: 2px solid #ff0000;
-    padding: 10px 20px;
-    border-radius: 30px;
-    font-weight: bold;
-    color: #d32f2f;
-    font-size: 20px;
-    box-shadow: 0 4px 10px rgba(0,0,0,0.2);
-    display: none;
-    z-index: 100;
-  }
-</style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>User Dashboard - Ambulance Alert</title>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --primary: #ff4b4b;
+            --success: #00c853;
+            --dark: #1a1a2e;
+            --light: #ffffff;
+            --glass: rgba(255, 255, 255, 0.95);
+        }
+
+        body { margin: 0; font-family: 'Outfit', sans-serif; overflow: hidden; }
+        
+        #map { height: 100vh; width: 100%; position: absolute; top: 0; left: 0; z-index: 0; display: none; }
+        
+        /* Dashboard Overlay */
+        .dashboard-ui {
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            z-index: 10;
+            pointer-events: none; /* Let clicks pass through to map when hidden */
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            padding: 20px;
+            box-sizing: border-box;
+        }
+
+        /* Top Bar */
+        .top-bar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            pointer-events: auto;
+        }
+
+        .status-badge {
+            background: var(--glass);
+            padding: 10px 20px;
+            border-radius: 30px;
+            font-weight: 600;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            transition: 0.3s;
+        }
+
+        .status-dot {
+            width: 10px; height: 10px;
+            border-radius: 50%;
+            background: #ccc;
+            box-shadow: 0 0 5px #ccc;
+        }
+
+        .status-badge.active .status-dot {
+            background: var(--success);
+            box-shadow: 0 0 8px var(--success);
+        }
+
+        /* Central Toggle Area */
+        .center-controls {
+            align-self: center;
+            text-align: center;
+            pointer-events: auto;
+            margin-bottom: 40px;
+            transition: all 0.5s ease;
+        }
+
+        /* Large Toggle Button to replace "Placeholder" */
+        .toggle-btn {
+            width: 120px;
+            height: 120px;
+            border-radius: 50%;
+            border: none;
+            cursor: pointer;
+            font-size: 40px;
+            color: white;
+            transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            position: relative;
+        }
+
+        .toggle-btn::after {
+            content: 'OFF';
+            position: absolute;
+            bottom: -30px;
+            font-size: 16px;
+            color: #555;
+            font-weight: 600;
+        }
+
+        /* OFF STATE */
+        .toggle-btn.off {
+            background: white;
+            color: #ccc;
+            border: 4px solid #eee;
+        }
+
+        .toggle-btn.off:hover {
+            transform: scale(1.1);
+            border-color: var(--success);
+            color: var(--success);
+        }
+
+        /* ON STATE */
+        .toggle-btn.on {
+            width: 80px; 
+            height: 80px; /* Shrinks when active to be less intrusive */
+            background: var(--success);
+            font-size: 30px;
+            box-shadow: 0 0 0 10px rgba(0, 200, 83, 0.2);
+            animation: pulse-green 2s infinite;
+        }
+        
+        .toggle-btn.on::after {
+            content: 'ON';
+            color: var(--success);
+        }
+
+        @keyframes pulse-green {
+            0% { box-shadow: 0 0 0 0 rgba(0, 200, 83, 0.4); }
+            70% { box-shadow: 0 0 0 20px rgba(0, 200, 83, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(0, 200, 83, 0); }
+        }
+
+        /* Instructions Overlay (Shows when OFF) */
+        .instructions {
+            position: absolute;
+            top: 40%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            pointer-events: none;
+            transition: opacity 0.3s;
+        }
+
+        .instructions h2 { margin: 0; color: #333; }
+        .instructions p { color: #666; }
+
+        .hidden { opacity: 0; pointer-events: none; }
+
+        /* Alert Popup */
+        #alert-popup {
+            position: fixed;
+            top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(255, 59, 59, 0.95);
+            color: white;
+            padding: 40px;
+            border-radius: 20px;
+            text-align: center;
+            z-index: 1000;
+            box-shadow: 0 20px 50px rgba(255, 59, 59, 0.4);
+            display: none;
+            backdrop-filter: blur(10px);
+        }
+
+        .alert-icon { font-size: 60px; margin-bottom: 20px; display: block; animation: shake 0.5s infinite; }
+        
+        @keyframes shake {
+            0% { transform: rotate(0deg); }
+            25% { transform: rotate(-10deg); }
+            75% { transform: rotate(10deg); }
+            100% { transform: rotate(0deg); }
+        }
+
+    </style>
 </head>
 <body>
 
-<div id="controls">
-    <button onclick="startRoadMode()">Road Mode ON</button>
-    <button onclick="stopRoadMode()">OFF</button>
-    <span id="status-text">Mode: OFF</span>
-</div>
+    <!-- Map Backend -->
+    <div id="map"></div>
 
-<div id="alert-popup">
-    🚑 AMBULANCE NEARBY!<br>
-    PLEASE GIVE WAY!
-</div>
+    <!-- UI Overlay -->
+    <div class="dashboard-ui">
+        <div class="top-bar">
+            <div class="status-badge" id="statusBadge">
+                <div class="status-dot"></div>
+                <span id="statusText">Disconnected</span>
+            </div>
+        </div>
 
-<div id="placeholder">
-    <div style="font-size: 60px; margin-bottom: 20px;">🚗</div>
-    <h3>Road Mode OFF</h3>
-    <p>Please click "Road Mode ON" to connect to the network<br>and view roadway warnings.</p>
-</div>
+        <!-- Central Instructions (Only visible when OFF) -->
+        <div class="instructions" id="instructions">
+            <h2>Road Mode</h2>
+            <p>Tap the button below to connect to the network<br>and receive real-time ambulance alerts.</p>
+        </div>
 
-<div id="map"></div>
+        <div class="center-controls">
+            <button id="mainToggle" class="toggle-btn off" onclick="toggleRoadMode()">
+                <div id="btnIcon">🚗</div>
+            </button>
+        </div>
+    </div>
 
-<script>
-let map, userMarker, ambMarker, hospMarker;
-let road = false;
-const alertPopup = document.getElementById('alert-popup');
-const statusText = document.getElementById('status-text');
-const mapDiv = document.getElementById('map');
-const placeholder = document.getElementById('placeholder');
-let notificationPermitted = false;
-let isAlerting = false;
+    <!-- Critical Alert Popup -->
+    <div id="alert-popup">
+        <span class="alert-icon">🚑</span>
+        <h1>AMBULANCE NEARBY!</h1>
+        <p>Please safely move aside and give way.</p>
+        <button onclick="hideAlert()" style="margin-top:20px; padding:10px 30px; border:none; border-radius:30px; background:white; color:red; font-weight:bold; cursor:pointer;">Dismiss</button>
+    </div>
 
-function startRoadMode() {
-    road = true;
-    statusText.innerText = "Mode: ON";
-    
-    // Show Map
-    mapDiv.style.display = "block";
-    placeholder.style.display = "none";
-    if(map) google.maps.event.trigger(map, "resize");
-
-    // Request permission explicitly on user interaction
-    if (Notification.permission !== "denied") {
-        Notification.requestPermission().then(p => {
-            notificationPermitted = (p === "granted");
-        });
-    }
-}
-
-function stopRoadMode() {
-    road = false;
-    statusText.innerText = "Mode: OFF";
-    alertPopup.style.display = "none";
-    
-    // Hide Map
-    mapDiv.style.display = "none";
-    placeholder.style.display = "flex";
-}
-
-function initMap(){
-  map = new google.maps.Map(document.getElementById("map"), {
-    center:{lat:11.0168,lng:76.9558}, zoom:14
-  });
-
-  navigator.geolocation.watchPosition(pos=>{
-    let lat = pos.coords.latitude;
-    let lng = pos.coords.longitude;
-    let speed = pos.coords.speed ? pos.coords.speed*3.6 : 0;
-
-    if(!userMarker){
-      userMarker = new google.maps.Marker({position:{lat,lng},map});
-      map.setCenter({lat,lng});
-    } else userMarker.setPosition({lat,lng});
-
-    fetch("/update_user",{
-      method:"POST",
-      headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({lat,lng,speed})
-    });
-  });
-
-  setInterval(()=>{
-    fetch("/check_nearby")
-    .then(r=>r.json())
-    .then(d=>{
-      console.log("Check result:", d, "Road Mode:", road); 
-      if(d.amb){
-        if(!ambMarker){
-          ambMarker = new google.maps.Marker({
-            position:d.amb,
-            map,
-            icon:"https://maps.google.com/mapfiles/ms/icons/truck.png"
-          });
-        } else ambMarker.setPosition(d.amb);
-      }
-      
-      if(d.alert && road){
-        showAlert();
-      } else {
-        hideAlert();
-      }
-      
-      // Hospital Marker
-      if (d.hospital) {
-          if (!hospMarker) {
-              hospMarker = new google.maps.Marker({
-                  position: d.hospital,
-                  map: map,
-                  title: d.hospital.name,
-                  icon: "https://maps.google.com/mapfiles/ms/icons/hospitals.png" // Reliable Hospital Icon
-              });
-          } else {
-            hospMarker.setPosition(d.hospital);
-          }
-      }
-      
-      // ETA Display REMOVED as per request
-    });
-  },3000);
-}
-
-    function showAlert() {
-        // Show visual popup always (it's passive)
-        alertPopup.style.display = "block";
+    <script>
+        let map, userMarker, ambMarker, hospMarker;
+        let roadMode = false;
+        const mainToggle = document.getElementById('mainToggle');
+        const statusBadge = document.getElementById('statusBadge');
+        const statusText = document.getElementById('statusText');
+        const instructions = document.getElementById('instructions');
+        const mapDiv = document.getElementById('map');
+        const alertPopup = document.getElementById('alert-popup');
         
-        // Only play sound and send system notification if not already alerting
-        if (!isAlerting) {
-            new Audio("/static/siren.mp3").play().catch(e => console.log("Audio autoplay blocked"));
+        // Audio
+        const sirenAudio = new Audio("/static/siren.mp3");
+        let isAlerting = false;
+
+        function toggleRoadMode() {
+            roadMode = !roadMode;
+            updateUI();
+            
+            if(roadMode) {
+                // Request Notifications
+                if (Notification.permission !== "denied") {
+                    Notification.requestPermission();
+                }
+                // Ensure map is resized correctly when shown
+                if(map) google.maps.event.trigger(map, "resize");
+            } else {
+                hideAlert(); // Stop alerts if turning off
+            }
+        }
+
+        function updateUI() {
+            if (roadMode) {
+                // GOING ONLINE
+                mainToggle.className = "toggle-btn on";
+                instructions.classList.add("hidden");
+                statusBadge.classList.add("active");
+                statusText.innerText = "Connected to Network";
+                mapDiv.style.display = "block"; // Show map
+                // Trigger resize to ensure map renders correctly after being hidden
+                if(map) google.maps.event.trigger(map, "resize");
+            } else {
+                // GOING OFFLINE
+                mainToggle.className = "toggle-btn off";
+                instructions.classList.remove("hidden");
+                statusBadge.classList.remove("active");
+                statusText.innerText = "Disconnected";
+                mapDiv.style.display = "none"; // Hide map completely
+            }
+        }
+
+        function initMap(){
+            map = new google.maps.Map(document.getElementById("map"), {
+                center:{lat:11.0168,lng:76.9558}, 
+                zoom:15,
+                disableDefaultUI: true, // Clean look
+                styles: [ // Dark mode map style for premium feel
+                    { elementType: "geometry", stylers: [{ color: "#242f3e" }] },
+                    { elementType: "labels.text.stroke", stylers: [{ color: "#242f3e" }] },
+                    { elementType: "labels.text.fill", stylers: [{ color: "#746855" }] },
+                    { featureType: "road", elementType: "geometry", stylers: [{ color: "#38414e" }] },
+                    { featureType: "road", elementType: "geometry.stroke", stylers: [{ color: "#212a37" }] },
+                    { featureType: "road", elementType: "labels.text.fill", stylers: [{ color: "#9ca5b3" }] },
+                    { featureType: "water", elementType: "geometry", stylers: [{ color: "#17263c" }] }
+                ]
+            });
+
+            // Start Location Tracking
+            if (navigator.geolocation) {
+                navigator.geolocation.watchPosition(pos => {
+                    let lat = pos.coords.latitude;
+                    let lng = pos.coords.longitude;
+                    let speed = pos.coords.speed ? pos.coords.speed*3.6 : 0;
+
+                    if(!userMarker){
+                        userMarker = new google.maps.Marker({
+                            position:{lat,lng},
+                            map: map,
+                            icon: {
+                                path: google.maps.SymbolPath.CIRCLE,
+                                scale: 8,
+                                fillColor: "#4285F4",
+                                fillOpacity: 1,
+                                strokeColor: "white",
+                                strokeWeight: 2
+                            }
+                        });
+                        map.setCenter({lat,lng});
+                    } else {
+                        userMarker.setPosition({lat,lng});
+                        // Only center if road mode is on to avoid annoying jumps
+                        if(roadMode) map.setCenter({lat,lng});
+                    }
+
+                    // Send update
+                    fetch("/update_user",{
+                        method:"POST",
+                        headers:{"Content-Type":"application/json"},
+                        body:JSON.stringify({lat,lng,speed})
+                    });
+                }, err => console.error(err), { enableHighAccuracy: true });
+            }
+
+            // Polling for Ambulance
+            setInterval(()=>{
+                fetch("/check_nearby")
+                .then(r=>r.json())
+                .then(d=>{
+                    // Handle Ambulance Marker
+                    if(d.amb){
+                        if(!ambMarker){
+                            ambMarker = new google.maps.Marker({
+                                position:d.amb,
+                                map: map,
+                                icon:"https://maps.google.com/mapfiles/ms/icons/truck.png"
+                            });
+                        } else ambMarker.setPosition(d.amb);
+                    }
+                    
+                    // Handle Alert
+                    if(d.alert && roadMode){
+                        showAlert();
+                    } else {
+                        // Only auto-hide if we were alerting and now clear
+                        // But let's verify if we want to auto-hide or let user dismiss
+                        if(!d.alert && isAlerting) hideAlert();
+                    }
+                });
+            }, 3000);
+        }
+
+        function showAlert() {
+            if(isAlerting) return;
+            isAlerting = true;
+            alertPopup.style.display = "block";
+            sirenAudio.loop = true;
+            sirenAudio.play().catch(e=>console.log("Audio block"));
 
             if (Notification.permission === "granted") {
-                new Notification("🚑 Ambulance Nearby", { 
-                    body: "An ambulance is approaching your location. Please give way.",
-                    icon: "/static/siren.png"
-                });
+                new Notification("🚨 AMBULANCE ALERT", { body: "Ambulance approaching! Please give way." });
             }
-            isAlerting = true;
         }
-    }
 
-    function hideAlert() {
-        alertPopup.style.display = "none";
-        isAlerting = false;
-    }
+        function hideAlert() {
+            isAlerting = false;
+            alertPopup.style.display = "none";
+            sirenAudio.pause();
+            sirenAudio.currentTime = 0;
+        }
 
-</script>
-
-<script async defer
-src="https://maps.googleapis.com/maps/api/js?key=AIzaSyAE3DmEpgRZI-0m6ERMPbc3sECXaQe_-Ts&callback=initMap">
-</script>
-
+    </script>
+    <script async defer
+        src="https://maps.googleapis.com/maps/api/js?key=AIzaSyAE3DmEpgRZI-0m6ERMPbc3sECXaQe_-Ts&callback=initMap">
+    </script>
 </body>
 </html>

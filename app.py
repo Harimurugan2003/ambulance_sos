@@ -48,8 +48,12 @@ def login():
             session['user_id'] = str(uuid.uuid4())
         return render_template("index.html") 
     elif user_type == "ambulance":
-        driver_id = request.form.get("driver_id")
-        return render_template("ambulance.html")
+        username = request.form.get("username")
+        password = request.form.get("password")
+        if username == "admin" and password == "admin123":
+            return render_template("ambulance.html")
+        else:
+            return render_template("login.html", error="Invalid Username or Password")
     return "Invalid Login"
 
 # ROAD MODE (People)
