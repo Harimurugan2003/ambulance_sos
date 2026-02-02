@@ -164,7 +164,7 @@ def check_nearby():
 
     # 2. Ambulance Alert Logic
     ambulance_active = (amb_status == 'ON')
-    is_in_vehicle = (usr_speed_kmh > 10) # User moving > 10km/h
+    is_in_vehicle = True # (usr_speed_kmh > 10) # Disabled for local testing
     
     dist_to_amb = calculate_distance(usr_lat, usr_lng, amb_lat, amb_lng)
     
