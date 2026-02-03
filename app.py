@@ -1,5 +1,5 @@
 from flask import Flask, render_template, request, jsonify, session
-from flask_mysqldb import MySQL
+import sqlite3
 import uuid
 import math
 
@@ -26,13 +26,12 @@ app = Flask(__name__)
 app.secret_key = "ambulance_secret"
 
 # DB CONFIG
-app.config['MYSQL_HOST'] = 'localhost'
-app.config['MYSQL_USER'] = 'root'
-app.config['MYSQL_PASSWORD'] = 'Harimurugan@17'
-app.config['MYSQL_DB'] = 'ambulance_alert'
-app.config['MYSQL_PORT'] = 3306
+DATABASE = 'ambulance.db'
 
-mysql = MySQL(app)
+def get_db_connection():
+    conn = sqlite3.connect(DATABASE)
+    conn.row_factory = sqlite3.Row  # Optional: allows accessing columns by name, but tuple access works too
+    return conn
 
 # HOME – LOGIN PAGE
 @app.route("/")
@@ -74,17 +73,16 @@ def update_user():
     data = request.json
     user_id = session['user_id']
 
-    cur = mysql.connection.cursor()
+    conn = get_db_connection()
+    cur = conn.cursor()
     cur.execute("""
-        INSERT INTO users VALUES (%s,%s,%s,%s,NOW())
-        ON DUPLICATE KEY UPDATE
-        lat=%s, lng=%s, speed=%s
-    """, (
-        user_id, data['lat'], data['lng'], data['speed'],
-        data['lat'], data['lng'], data['speed']
-    ))
-    mysql.connection.commit()
-    cur.close()
+        INSERT INTO users (user_id, lat, lng, speed, updated_at)
+        VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+        ON CONFLICT(user_id) DO UPDATE SET
+        lat=excluded.lat, lng=excluded.lng, speed=excluded.speed, updated_at=CURRENT_TIMESTAMP
+    """, (user_id, data['lat'], data['lng'], data['speed']))
+    conn.commit()
+    conn.close()
     return "User updated"
 
 # UPDATE AMBULANCE LOCATION
@@ -95,14 +93,15 @@ def update_ambulance():
     lng = data['lng']
     status = data.get('status', 'OFF') # Default to OFF if not sent
     
-    cur = mysql.connection.cursor()
+    conn = get_db_connection()
+    cur = conn.cursor()
     cur.execute("""
         UPDATE ambulance
-        SET lat=%s, lng=%s, status=%s
+        SET lat=?, lng=?, status=?
         WHERE id=1
     """, (lat, lng, status))
-    mysql.connection.commit()
-    cur.close()
+    conn.commit()
+    conn.close()
 
     # Calculate Nearest Hospital & ETA for the Driver
     nearest_hospital = None
@@ -134,14 +133,15 @@ def check_nearby():
     user_id = session.get('user_id')
     if not user_id: return jsonify({"alert": False})
 
-    cur = mysql.connection.cursor()
+    conn = get_db_connection()
+    cur = conn.cursor()
 
     cur.execute("SELECT * FROM ambulance WHERE id=1")
     amb = cur.fetchone()
     
-    cur.execute("SELECT * FROM users WHERE user_id=%s", (user_id,))
+    cur.execute("SELECT * FROM users WHERE user_id=?", (user_id,))
     usr = cur.fetchone()
-    cur.close()
+    conn.close()
 
     if not usr or not amb:
         return jsonify({"alert": False})
