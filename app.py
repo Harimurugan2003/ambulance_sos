@@ -88,27 +88,31 @@ def update_user():
 # UPDATE AMBULANCE LOCATION
 @app.route("/update_ambulance", methods=["POST"])
 def update_ambulance():
-    data = request.json
-    lat = data['lat']
-    lng = data['lng']
+    data = request.get_json(force=True) if request.is_json or request.data else {}
+    if not data: return "No Data", 400
+    lat = data.get('lat', 0)
+    lng = data.get('lng', 0)
     status = data.get('status', 'OFF') # Default to OFF if not sent
+    green_corridor = data.get('green_corridor', False)
     
     conn = get_db_connection()
     cur = conn.cursor()
     cur.execute("""
         UPDATE ambulance
-        SET lat=?, lng=?, status=?
+        SET lat=?, lng=?, status=?, updated_at=CURRENT_TIMESTAMP, green_corridor=?
         WHERE id=1
-    """, (lat, lng, status))
+    """, (lat, lng, status, green_corridor))
     conn.commit()
     conn.close()
 
-    # Calculate Nearest Hospital & ETA for the Driver
+    # Calculate Nearest Hospital (Still needed for name, but ETA now comes from driver)
     nearest_hospital = None
     eta_seconds = 0
     
     if status == 'ON':
         min_dist = float('inf')
+        eta_seconds = 0   # Initialize here or outside
+
         for hosp in HOSPITALS:
             d = calculate_distance(lat, lng, hosp['lat'], hosp['lng'])
             if d < min_dist:
@@ -130,73 +134,103 @@ def update_ambulance():
 # CHECK NEARBY
 @app.route("/check_nearby")
 def check_nearby():
-    user_id = session.get('user_id')
-    if not user_id: return jsonify({"alert": False})
+    try:
+        user_id = session.get('user_id')
+        if not user_id: return jsonify({"alert": False})
 
-    conn = get_db_connection()
-    cur = conn.cursor()
+        conn = get_db_connection()
+        cur = conn.cursor()
 
-    cur.execute("SELECT * FROM ambulance WHERE id=1")
-    amb = cur.fetchone()
-    
-    cur.execute("SELECT * FROM users WHERE user_id=?", (user_id,))
-    usr = cur.fetchone()
-    conn.close()
-
-    if not usr or not amb:
-        return jsonify({"alert": False})
-
-    # Data extraction
-    amb_lat, amb_lng = amb[1], amb[2]
-    amb_status = amb[3]
-    usr_lat, usr_lng = usr[1], usr[2]
-    usr_speed_kmh = usr[3]
-
-    # 1. Nearest Hospital Logic (For User Display)
-    nearest_hospital_user = None
-    min_dist_hosp_user = float('inf')
-    
-    for hosp in HOSPITALS:
-        h_dist = calculate_distance(usr_lat, usr_lng, hosp['lat'], hosp['lng'])
-        if h_dist < min_dist_hosp_user:
-            min_dist_hosp_user = h_dist
-            nearest_hospital_user = hosp
-
-    # 2. Ambulance Alert Logic
-    ambulance_active = (amb_status == 'ON')
-    is_in_vehicle = True # (usr_speed_kmh > 10) # Disabled for local testing
-    
-    dist_to_amb = calculate_distance(usr_lat, usr_lng, amb_lat, amb_lng)
-    
-    # Alert if nearest < 0.5km (500m)
-    near = (ambulance_active and is_in_vehicle and dist_to_amb < 0.5)
-
-    # 3. ETA Calculation (Ambulance -> Nearest Hospital)
-    eta_seconds = 0
-    nearest_hospital_amb = None
-    
-    if ambulance_active:
-        # Find hospital nearest to AMBULANCE
-        min_dist_hosp_amb = float('inf')
-        for hosp in HOSPITALS:
-            h_dist = calculate_distance(amb_lat, amb_lng, hosp['lat'], hosp['lng'])
-            if h_dist < min_dist_hosp_amb:
-                min_dist_hosp_amb = h_dist
-                nearest_hospital_amb = hosp
+        cur.execute("SELECT * FROM ambulance WHERE id=1")
+        amb = cur.fetchone()
         
-        # Calculate ETA
-        speed_mps = 60 * (1000/3600) # ~16.6 m/s
-        dist_m = min_dist_hosp_amb * 1000
-        if speed_mps > 0:
-            eta_seconds = dist_m / speed_mps
+        cur.execute("SELECT * FROM users WHERE user_id=?", (user_id,))
+        usr = cur.fetchone()
+        conn.close()
 
-    return jsonify({
-        "alert": near,
-        "amb": {"lat": amb_lat, "lng": amb_lng},
-        "hospital": nearest_hospital_user, # Show hospital nearest to USER on map
-        "eta_seconds": int(eta_seconds) if ambulance_active else None,
-        "hospital_target": nearest_hospital_amb # Optional: if we want to show where amb is going
-    })
+        if not usr or not amb:
+            return jsonify({"alert": False})
+
+        # Data extraction
+        amb_lat, amb_lng = amb[1], amb[2]
+        amb_status = amb[3]
+        # amb[4] is updated_at
+        green_corridor_active = bool(amb[5]) if len(amb) > 5 else False
+
+        usr_lat, usr_lng = usr[1], usr[2]
+        usr_speed_kmh = usr[3]
+
+        # 1. Nearest Hospital Logic (For User Display)
+        nearest_hospital_user = None
+        min_dist_hosp_user = float('inf')
+        
+        for hosp in HOSPITALS:
+            h_dist = calculate_distance(usr_lat, usr_lng, hosp['lat'], hosp['lng'])
+            if h_dist < min_dist_hosp_user:
+                min_dist_hosp_user = h_dist
+                nearest_hospital_user = hosp
+
+        # 2. Ambulance Alert Logic
+        # Heartbeat Check: If ambulance hasn't updated in > 30 seconds, treat as inactive
+        from datetime import datetime
+        
+        ambulance_active = False
+        
+        # Check if ambulance update is recent (within 30s)
+        if amb_status == 'ON' and amb['updated_at']:
+            # Parse timestamp safely (SQLite returns string)
+            try:
+                # Format depends on SQLite default. Usually YYYY-MM-DD HH:MM:SS (UTC)
+                updated_time = datetime.strptime(amb['updated_at'], '%Y-%m-%d %H:%M:%S')
+                
+                # Debugging Time
+                now_utc = datetime.utcnow()
+                diff = (now_utc - updated_time).total_seconds()
+
+                if diff < 20: 
+                    ambulance_active = True
+            except Exception as e:
+                print(f"Time parse error: {e}")
+                ambulance_active = (amb_status == 'ON') # Fallback if time fails
+
+        is_in_vehicle = True 
+        
+        dist_to_amb = calculate_distance(usr_lat, usr_lng, amb_lat, amb_lng)
+        
+        # Alert if nearest < 0.5km (500m)
+        near = (ambulance_active and is_in_vehicle and dist_to_amb < 0.5)
+
+        # 3. ETA Calculation (Ambulance -> Nearest Hospital)
+        eta_seconds = 0
+        nearest_hospital_amb = None
+        
+        if ambulance_active:
+            # Find hospital nearest to AMBULANCE
+            min_dist_hosp_amb = float('inf')
+            for hosp in HOSPITALS:
+                h_dist = calculate_distance(amb_lat, amb_lng, hosp['lat'], hosp['lng'])
+                if h_dist < min_dist_hosp_amb:
+                    min_dist_hosp_amb = h_dist
+                    nearest_hospital_amb = hosp
+            
+            # Calculate ETA
+            speed_mps = 60 * (1000/3600) # ~16.6 m/s
+            dist_m = min_dist_hosp_amb * 1000
+            if speed_mps > 0:
+                eta_seconds = dist_m / speed_mps
+
+        return jsonify({
+            "alert": near,
+            "amb": {"lat": amb_lat, "lng": amb_lng},
+            "hospital": nearest_hospital_user, # Show hospital nearest to USER on map
+            "eta_seconds": int(eta_seconds) if ambulance_active else None,
+            "hospital_target": nearest_hospital_amb, # Optional: if we want to show where amb is going
+            "green_corridor": green_corridor_active and ambulance_active # Only true if amb is also active
+        })
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
 
 if __name__ == "__main__":
     app.run(debug=True)

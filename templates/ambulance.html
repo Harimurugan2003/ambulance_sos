@@ -4,8 +4,8 @@
     <title>Ambulance Mode</title>
     <style>
         body { margin: 0; padding: 0; font-family: sans-serif; }
-        h3 { position: absolute; top: 10px; left: 10px; z-index: 10; background: white; padding: 10px; margin: 0; border-radius: 4px; box-shadow: 0 2px 6px rgba(0,0,0,0.3); }
-        #map { height: 100vh; width: 100%; display: none; }
+        h3 { position: absolute; top: 10px; left: 10px; z-index: 2000; background: white; padding: 10px; margin: 0; border-radius: 4px; box-shadow: 0 2px 6px rgba(0,0,0,0.3); }
+        #map { height: 100vh; width: 100%; display: none; z-index: 0; }
         #placeholder { 
             height: 100vh; 
             width: 100%; 
@@ -17,7 +17,8 @@
             font-size: 24px; 
             flex-direction: column;
         }
-        #controls { position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%); z-index: 10; display: flex; gap: 10px; }
+        #controls { position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%); z-index: 2000; display: flex; flex-direction: column; gap: 10px; align-items: center; }
+        #status-bar { display: flex; gap: 10px; align-items: center; }
         #status { background: white; padding: 10px 20px; border-radius: 30px; font-weight: bold; box-shadow: 0 2px 5px rgba(0,0,0,0.2); }
         
         .btn-toggle {
@@ -31,32 +32,53 @@
             transition: background 0.3s;
         }
         .btn-off { background-color: #4CAF50; color: white; } /* Green for "Go Online / Start" */
-        .btn-off { background-color: #4CAF50; color: white; } /* Green for "Go Online / Start" */
         .btn-on { background-color: #f44336; color: white; } /* Red for "Stop Emergency" */
         
+        .btn-green-corridor {
+            background-color: #aaa; color: white;
+            font-size: 14px;
+            padding: 8px 16px;
+        }
+        .btn-green-corridor.active {
+            background-color: #00C853; /* Bright Green */
+            box-shadow: 0 0 10px #00C853;
+        }
+
         #info-panel {
             position: absolute;
-            top: 10px;
+            top: 70px; /* Moved down to avoid h3 overlap */
             right: 10px;
             background: white;
             padding: 15px;
             border-radius: 10px;
             box-shadow: 0 4px 10px rgba(0,0,0,0.2);
-            z-index: 10;
+            z-index: 2000;
             display: none;
             text-align: right;
+            max-width: 200px; /* Prevent too wide */
         }
         #info-panel div { margin-bottom: 5px; }
         .hosp-name { font-weight: bold; font-size: 18px; color: #d32f2f; }
         .eta-time { font-size: 24px; font-weight: bold; color: #1a237e; }
+
+        /* Emoji Marker Styles */
+        .emoji-icon {
+            font-size: 30px;
+            text-align: center;
+            line-height: 30px;
+            text-shadow: 0 2px 5px rgba(0,0,0,0.5);
+        }
     </style>
 </head>
 <body>
     <h3>🚑 Ambulance Mode</h3>
     
     <div id="controls">
-        <div id="status">Standby</div>
-        <button id="toggleBtn" class="btn-toggle btn-off" onclick="toggleEmergency()">Start Emergency</button>
+        <div id="status-bar">
+            <div id="status">Standby</div>
+            <button id="toggleBtn" class="btn-toggle btn-off" onclick="toggleEmergency()">Start Emergency</button>
+        </div>
+        <button id="greenBtn" class="btn-toggle btn-green-corridor" onclick="toggleGreenCorridor()" disabled>Request Green Corridor</button>
     </div>
 
     <div id="info-panel">
@@ -70,27 +92,50 @@
 
     <div id="map"></div>
 
+
+    <!-- Leaflet CSS & JS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    
+    <!-- Leaflet Routing Machine -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine@latest/dist/leaflet-routing-machine.css" />
+    <script src="https://unpkg.com/leaflet-routing-machine@latest/dist/leaflet-routing-machine.js"></script>
+    
     <script>
         let map, ambulanceMarker, destMarker;
+        let routingControl;
         const statusDiv = document.getElementById('status');
         const toggleBtn = document.getElementById('toggleBtn');
+        const greenBtn = document.getElementById('greenBtn');
         const infoPanel = document.getElementById('info-panel');
         const hospNameDiv = document.getElementById('hosp-name');
         const etaTextDiv = document.getElementById('eta-text');
         
         let isEmergency = false;
+        let isGreenCorridor = false;
         let currentLat = 0;
         let currentLng = 0;
+
         
-        // Voice State
-        let announcedStart = false;
-        let announcedArrival = false;
+        // Custom Icons (Emoji)
+        const ambulanceIcon = L.divIcon({
+            className: 'emoji-icon',
+            html: '🚑',
+            iconSize: [40, 40],
+            iconAnchor: [20, 20]
+        });
+
+        const hospitalIcon = L.divIcon({
+            className: 'emoji-icon',
+            html: '🏥',
+            iconSize: [40, 40],
+            iconAnchor: [20, 20]
+        });
 
         function speak(text) {
+            // ... (existing speak fn) ...
             if ('speechSynthesis' in window) {
                 const utterance = new SpeechSynthesisUtterance(text);
-                utterance.rate = 1.0;
-                utterance.pitch = 1.0;
                 window.speechSynthesis.speak(utterance);
             }
         }
@@ -98,19 +143,37 @@
         function toggleEmergency() {
             isEmergency = !isEmergency;
             
-            // Reset Voice State on Toggle
             if (isEmergency) {
                 announcedStart = false; 
                 announcedArrival = false;
+                greenBtn.disabled = false; // Enable Green Corridor button
             } else {
                 speak("Emergency mode deactivated. Returning to standby.");
+                isGreenCorridor = false; // Auto turn off green corridor
+                greenBtn.disabled = true;
+                greenBtn.className = "btn-toggle btn-green-corridor";
             }
             
             updateUI();
-            // Send update immediately to reflect status change
             sendUpdate(currentLat, currentLng);
         }
+
+        function toggleGreenCorridor() {
+            if(!isEmergency) return;
+            isGreenCorridor = !isGreenCorridor;
+            
+            if(isGreenCorridor) {
+                greenBtn.className = "btn-toggle btn-green-corridor active";
+                speak("Green Corridor Requested. Signal override active.");
+            } else {
+                greenBtn.className = "btn-toggle btn-green-corridor";
+                speak("Green Corridor Deactivated.");
+            }
+            sendUpdate(currentLat, currentLng);
+        }
+
         function updateUI() {
+            // ... (existing updateUI) ...
             const mapDiv = document.getElementById('map');
             const placeholder = document.getElementById('placeholder');
 
@@ -120,17 +183,14 @@
                 toggleBtn.innerText = "Stop Emergency";
                 toggleBtn.className = "btn-toggle btn-on";
                 
-                // Show Map
                 mapDiv.style.display = "block";
                 placeholder.style.display = "none";
                 
-                // Resize event often needed when un-hiding google maps
-                if (typeof google !== 'undefined' && map) {
-                    google.maps.event.trigger(map, "resize"); 
-                    map.setCenter({ lat: currentLat || 11.0168, lng: currentLng || 76.9558 });
+                if (map) {
+                    map.invalidateSize();
+                    if(currentLat && currentLng) map.setView([currentLat, currentLng]);
                 } else {
-                    console.warn("Google Maps not ready yet.");
-                    if(typeof initMap === 'function') initMap(); // Retry init if needed
+                    initMap();
                 }
             } else {
                 statusDiv.innerText = "Standby mode";
@@ -138,14 +198,13 @@
                 toggleBtn.innerText = "Start Emergency";
                 toggleBtn.className = "btn-toggle btn-off";
                 
-                // Hide Map
                 mapDiv.style.display = "none";
                 placeholder.style.display = "flex";
             }
         }
 
         function sendUpdate(lat, lng) {
-            if (lat === 0 && lng === 0) return; // Don't send invalid coordinates
+            if (lat === 0 && lng === 0) return;
             
             fetch("/update_ambulance", {
                 method: "POST",
@@ -153,9 +212,11 @@
                 body: JSON.stringify({
                     lat: lat, 
                     lng: lng,
-                    status: isEmergency ? 'ON' : 'OFF'
+                    status: isEmergency ? 'ON' : 'OFF',
+                    green_corridor: isGreenCorridor
                 })
             })
+            // ... (rest of function) ...
             // ... (rest of the function) ...
             .then(res => res.json())
             .then(data => {
@@ -180,20 +241,55 @@
                     }
                     
                     // Update Destination Marker
+                    let hospLat = data.hospital.lat;
+                    let hospLng = data.hospital.lng;
+
+                    // ROUTING LOGIC
+                    let realEta = 0;
+
+                    if (typeof L.Routing !== 'undefined') {
+                        if (!routingControl) {
+                            routingControl = L.Routing.control({
+                                waypoints: [
+                                    L.latLng(lat, lng),
+                                    L.latLng(hospLat, hospLng)
+                                ],
+                                createMarker: function() { return null; },
+                                lineOptions: {
+                                    styles: [{color: 'blue', opacity: 0.6, weight: 6}]
+                                },
+                                show: false,
+                                addWaypoints: false,
+                                draggableWaypoints: false,
+                                fitSelectedRoutes: false
+                            }).addTo(map);
+                        } else {
+                            routingControl.setWaypoints([
+                                L.latLng(lat, lng),
+                                L.latLng(hospLat, hospLng)
+                            ]);
+                        }
+                    }
+
                     if (!destMarker) {
-                        destMarker = new google.maps.Marker({
-                            position: data.hospital,
-                            map: map,
-                            title: data.hospital.name,
-                            icon: "https://maps.google.com/mapfiles/ms/icons/hospitals.png"
-                        });
+                        destMarker = L.marker([hospLat, hospLng], {
+                            icon: hospitalIcon,
+                            title: data.hospital.name
+                        }).addTo(map).bindPopup(data.hospital.name).openPopup();
                     } else {
-                        destMarker.setPosition(data.hospital);
-                        destMarker.setMap(map); // Ensure visible
+                        destMarker.setLatLng([hospLat, hospLng]);
+                        destMarker.setPopupContent(data.hospital.name);
+                        if(!map.hasLayer(destMarker)) { 
+                            destMarker.addTo(map).bindPopup(data.hospital.name).openPopup(); 
+                        }
                     }
                 } else {
                     infoPanel.style.display = "none";
-                    if (destMarker) destMarker.setMap(null);
+                    if (destMarker) destMarker.remove();
+                    if (routingControl && map) {
+                        map.removeControl(routingControl);
+                        routingControl = null;
+                    }
                 }
             })
             .catch(err => console.error("Error sending update:", err));
@@ -201,21 +297,39 @@
 
         function initMap() {
             // Default center (Coimbatore approx from index.html)
-            const initialPos = { lat: 11.0168, lng: 76.9558 };
-            map = new google.maps.Map(document.getElementById("map"), {
-                zoom: 15,
+            const initialPos = [11.0168, 76.9558];
+            
+            if(map) return; // Already initialized
+
+            map = L.map('map', {
                 center: initialPos,
+                zoom: 15,
+                zoomControl: false 
             });
 
-            ambulanceMarker = new google.maps.Marker({
-                position: initialPos,
-                map: map,
-                title: "Ambulance",
-                icon: "https://maps.google.com/mapfiles/ms/icons/truck.png"
-            });
+             // Add Dark Mode Tiles (CartoDB Dark Matter)
+             L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+                attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+                subdomains: 'abcd',
+                maxZoom: 20
+            }).addTo(map);
+
+
+            ambulanceMarker = L.marker(initialPos, {
+                icon: ambulanceIcon,
+                title: "Ambulance"
+            }).addTo(map);
 
             startTracking();
         }
+
+        // Initialize map on load (even if hidden, so vars are ready)
+        // But we defer tile loading until shown ideally, however L.map needs container size. 
+        // We'll call initMap on load but since div is hidden map size is 0. 
+        // unique problem: L.map on hidden div. 
+        // We will call initMap but ensure invalidateSize is called on show.
+        document.addEventListener('DOMContentLoaded', initMap);
+
 
         function startTracking() {
             if (!navigator.geolocation) {
@@ -227,12 +341,12 @@
                 (pos) => {
                     currentLat = pos.coords.latitude;
                     currentLng = pos.coords.longitude;
-                    const position = { lat: currentLat, lng: currentLng };
+                    const position = [currentLat, currentLng];
 
                     // Update Map
                     if (map && ambulanceMarker) {
-                        ambulanceMarker.setPosition(position);
-                        map.setCenter(position);
+                        ambulanceMarker.setLatLng(position);
+                        if(isEmergency) map.setView(position);
                     }
 
                     // Send to Server
@@ -246,11 +360,16 @@
                 }
             );
         }
-    </script>
-    
-    <!-- Using the same key found in index.html -->
-    <script async defer
-        src="https://maps.googleapis.com/maps/api/js?key=AIzaSyAE3DmEpgRZI-0m6ERMPbc3sECXaQe_-Ts&callback=initMap">
+
+        // Cleanup on close
+        window.addEventListener('beforeunload', function() {
+            navigator.sendBeacon("/update_ambulance", JSON.stringify({
+                lat: currentLat,
+                lng: currentLng,
+                status: 'OFF',
+                green_corridor: false
+            }));
+        });
     </script>
 </body>
 </html>

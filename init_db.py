@@ -21,14 +21,16 @@ def init_db():
             id INTEGER PRIMARY KEY,
             lat REAL,
             lng REAL,
-            status TEXT
+            status TEXT,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            green_corridor BOOLEAN DEFAULT 0
         )
     """)
     
     # Insert initial ambulance data if not exists
     cursor.execute("SELECT count(*) FROM ambulance WHERE id=1")
     if cursor.fetchone()[0] == 0:
-        cursor.execute("INSERT INTO ambulance (id, lat, lng, status) VALUES (1, 0, 0, 'OFF')")
+        cursor.execute("INSERT INTO ambulance (id, lat, lng, status, green_corridor) VALUES (1, 0, 0, 'OFF', 0)")
         print("Initialized ambulance data.")
     
     conn.commit()
